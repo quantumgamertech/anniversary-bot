@@ -60,7 +60,7 @@ def get_guild_settings(guild_id):
 
     cur.execute(
         "SELECT channel_id, role_name FROM guild_settings WHERE guild_id = %s",
-        (str(guild_id),)
+        (str(guild_id),),
     )
     result = cur.fetchone()
 
@@ -70,22 +70,22 @@ def get_guild_settings(guild_id):
     if not result:
         return None
 
-    return {
-        "channel_id": int(result[0]) if result[0] else None,
-        "role_name": result[1]
-    }
+    return {"channel_id": int(result[0]) if result[0] else None, "role_name": result[1]}
 
 
 def set_channel_for_guild(guild_id, channel_id):
     conn = get_db_connection()
     cur = conn.cursor()
 
-    cur.execute("""
+    cur.execute(
+        """
         INSERT INTO guild_settings (guild_id, channel_id)
         VALUES (%s, %s)
         ON CONFLICT (guild_id)
         DO UPDATE SET channel_id = EXCLUDED.channel_id
-    """, (str(guild_id), str(channel_id)))
+    """,
+        (str(guild_id), str(channel_id)),
+    )
 
     conn.commit()
     cur.close()
@@ -96,12 +96,15 @@ def set_role_for_guild(guild_id, role_name):
     conn = get_db_connection()
     cur = conn.cursor()
 
-    cur.execute("""
+    cur.execute(
+        """
         INSERT INTO guild_settings (guild_id, role_name)
         VALUES (%s, %s)
         ON CONFLICT (guild_id)
         DO UPDATE SET role_name = EXCLUDED.role_name
-    """, (str(guild_id), role_name))
+    """,
+        (str(guild_id), role_name),
+    )
 
     conn.commit()
     cur.close()
@@ -112,10 +115,13 @@ def already_sent_today(guild_id, user_id, today_key):
     conn = get_db_connection()
     cur = conn.cursor()
 
-    cur.execute("""
+    cur.execute(
+        """
         SELECT 1 FROM anniversary_log
         WHERE guild_id = %s AND user_id = %s AND anniversary_date = %s
-    """, (str(guild_id), str(user_id), today_key))
+    """,
+        (str(guild_id), str(user_id), today_key),
+    )
 
     result = cur.fetchone()
 
@@ -129,11 +135,14 @@ def mark_sent_today(guild_id, user_id, today_key):
     conn = get_db_connection()
     cur = conn.cursor()
 
-    cur.execute("""
+    cur.execute(
+        """
         INSERT INTO anniversary_log (guild_id, user_id, anniversary_date)
         VALUES (%s, %s, %s)
         ON CONFLICT DO NOTHING
-    """, (str(guild_id), str(user_id), today_key))
+    """,
+        (str(guild_id), str(user_id), today_key),
+    )
 
     conn.commit()
     cur.close()
@@ -184,7 +193,9 @@ async def check_anniversaries():
                         role = discord.utils.get(guild.roles, name=role_name)
                         if role and role not in member.roles:
                             try:
-                                await member.add_roles(role, reason="Server anniversary reward")
+                                await member.add_roles(
+                                    role, reason="Server anniversary reward"
+                                )
                             except Exception as e:
                                 print(f"Role error for {member.name}: {e}")
 
