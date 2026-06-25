@@ -33,6 +33,9 @@ Legacy Bot is a Discord growth and analytics bot built for server owners who wan
 - `/analytics` - View a free 7-day growth snapshot
 - `/growthtoday` - View today's growth stats
 - `/growthleaderboard` - View top growth days
+- `/healthscore` - View a calculated server health score
+- `/advisor` - Get rule-based growth suggestions
+- `/growthpredict` - View a simple recent-average growth projection
 - `/premium` - Compare free and premium features
 - `/premiumstatus` - View this server's premium/billing status
 - `/vote` - Get the Top.gg vote link
@@ -49,6 +52,24 @@ Legacy Bot is a Discord growth and analytics bot built for server owners who wan
 - `/dashboard` - View the premium analytics dashboard
 
 Legacy Bot also supports prefix commands using `!`.
+
+## Website foundation
+
+A static docs-ready landing page is available at `website/index.html`. It is separate from the Railway worker process and does not change bot deployment.
+
+Sections included:
+
+- Invite Bot
+- Features
+- Free vs Premium
+- Commands
+- Support
+- Privacy
+- Terms
+
+## Brand polish plan
+
+Avatar upgrade notes are tracked in `docs/brand-polish-plan.md`. The avatar is not replaced automatically.
 
 ## Setup
 

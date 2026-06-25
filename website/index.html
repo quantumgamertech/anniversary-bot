@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Legacy Bot</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #11131a;
+      --panel: #191d27;
+      --text: #f4f7fb;
+      --muted: #aeb8c6;
+      --line: #2b3140;
+      --accent: #ffd166;
+      --good: #43b581;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.55;
+    }
+
+    header,
+    section,
+    footer {
+      padding: 32px max(20px, calc((100vw - 1040px) / 2));
+    }
+
+    header {
+      border-bottom: 1px solid var(--line);
+      background: #151924;
+    }
+
+    h1,
+    h2 {
+      margin: 0 0 12px;
+      letter-spacing: 0;
+    }
+
+    p {
+      margin: 0 0 16px;
+      color: var(--muted);
+      max-width: 760px;
+    }
+
+    a {
+      color: var(--accent);
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 20px;
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 42px;
+      padding: 0 16px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      color: var(--text);
+      text-decoration: none;
+      border-radius: 6px;
+      font-weight: 700;
+    }
+
+    .button.primary {
+      background: var(--accent);
+      color: #17120a;
+      border-color: var(--accent);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 14px;
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 8px;
+      padding: 18px;
+    }
+
+    .card h3 {
+      margin: 0 0 8px;
+      font-size: 18px;
+    }
+
+    ul {
+      margin: 0;
+      padding-left: 20px;
+      color: var(--muted);
+    }
+
+    code {
+      color: var(--text);
+      background: #232938;
+      padding: 2px 5px;
+      border-radius: 4px;
+    }
+
+    footer {
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Legacy Bot</h1>
+    <p>Discord growth analytics, server health signals, vote rewards, and premium reporting for community owners.</p>
+    <div class="actions">
+      <a class="button primary" href="https://discord.com/oauth2/authorize?client_id=1483943578148405279&amp;permissions=8&amp;integration_type=0&amp;scope=bot+applications.commands">Invite Bot</a>
+      <a class="button" href="https://discord.gg/7htnU8d2bm">Support</a>
+    </div>
+  </header>
+
+  <section id="features">
+    <h2>Features</h2>
+    <div class="grid">
+      <div class="card">
+        <h3>Growth Tracking</h3>
+        <p>Track joins, leaves, net growth, best days, and leaderboards from available Discord member events.</p>
+      </div>
+      <div class="card">
+        <h3>Vote Rewards</h3>
+        <p>Connect Top.gg votes to temporary vote premium and optional server reward roles.</p>
+      </div>
+      <div class="card">
+        <h3>Premium Reports</h3>
+        <p>Unlock charted dashboards, weekly analytics, daily reports, and growth alerts.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="plans">
+    <h2>Free vs Premium</h2>
+    <div class="grid">
+      <div class="card">
+        <h3>Free</h3>
+        <ul>
+          <li>Daily growth tracking</li>
+          <li>7-day analytics snapshot</li>
+          <li>Growth leaderboard</li>
+          <li>Milestone roles</li>
+          <li>Top.gg vote rewards</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Premium</h3>
+        <ul>
+          <li>Growth dashboard with chart</li>
+          <li>Weekly growth analytics</li>
+          <li>Daily report automation</li>
+          <li>Live growth and drop alerts</li>
+          <li>Custom alert thresholds</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="commands">
+    <h2>Commands</h2>
+    <div class="grid">
+      <div class="card">
+        <h3>Start</h3>
+        <p><code>/start</code>, <code>/setup</code>, <code>/help</code>, <code>/premium</code></p>
+      </div>
+      <div class="card">
+        <h3>Growth</h3>
+        <p><code>/growthtoday</code>, <code>/analytics</code>, <code>/growthleaderboard</code>, <code>/dashboard</code></p>
+      </div>
+      <div class="card">
+        <h3>Insights</h3>
+        <p><code>/healthscore</code>, <code>/advisor</code>, <code>/growthpredict</code></p>
+      </div>
+      <div class="card">
+        <h3>Votes and Billing</h3>
+        <p><code>/vote</code>, <code>/votestatus</code>, <code>/buypremium</code>, <code>/premiumstatus</code></p>
+      </div>
+    </div>
+  </section>
+
+  <section id="support">
+    <h2>Support</h2>
+    <p>For setup, billing, privacy, or data requests, use the official support server.</p>
+    <a class="button" href="https://discord.gg/7htnU8d2bm">Open Support</a>
+  </section>
+
+  <section id="privacy">
+    <h2>Privacy</h2>
+    <p>Legacy Bot stores the server, growth, vote, and billing data needed to operate bot features. See <a href="../PRIVACY.md">Privacy Policy</a>.</p>
+  </section>
+
+  <section id="terms">
+    <h2>Terms</h2>
+    <p>Use of Legacy Bot is governed by the project terms. See <a href="../TERMS.md">Terms of Service</a>.</p>
+  </section>
+
+  <footer>
+    Legacy Bot static website foundation. This file is separate from the Railway worker process.
+  </footer>
+</body>
+</html>

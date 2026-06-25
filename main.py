@@ -1407,6 +1407,149 @@ def summarize_growth_timeseries(rows):
     }
 
 
+def count_growth_data_days(rows) -> int:
+    return sum(1 for row in rows if int(row["joins"]) > 0 or int(row["leaves"]) > 0)
+
+
+def build_not_enough_growth_data_embed(
+    title: str,
+    guild: discord.Guild,
+    observed_days: int,
+    required_days: int = 3,
+) -> discord.Embed:
+    embed = build_main_embed(
+        title,
+        f"Not enough growth data yet for **{guild.name}**.",
+        discord.Color.blurple(),
+    )
+    embed.add_field(
+        name="Data Needed",
+        value=(
+            f"Need at least **{required_days}** days with joins or leaves. "
+            f"Current data days: **{observed_days}**."
+        ),
+        inline=False,
+    )
+    embed.add_field(
+        name="What Counts",
+        value="Member joins and leaves recorded while Legacy Bot is in the server.",
+        inline=False,
+    )
+    return embed
+
+
+def clamp_score(value: int) -> int:
+    return max(0, min(100, int(value)))
+
+
+def health_label(score: int) -> str:
+    if score >= 80:
+        return "Strong"
+    if score >= 60:
+        return "Stable"
+    if score >= 40:
+        return "Needs Attention"
+    return "At Risk"
+
+
+def build_server_health_embed(guild: discord.Guild) -> discord.Embed:
+    rows = get_growth_timeseries(guild.id, days=14)
+    observed_days = count_growth_data_days(rows)
+    if observed_days < 3:
+        return build_not_enough_growth_data_embed("Server Health Score", guild, observed_days)
+
+    summary = summarize_growth_timeseries(rows)
+    join_points = min(20, summary["joins"] * 2)
+    net_points = max(-25, min(25, summary["net"] * 3))
+    consistency_points = (summary["positive_days"] * 4) - (summary["negative_days"] * 3)
+    churn_penalty = min(20, summary["leaves"] * 2)
+    score = clamp_score(55 + join_points + net_points + consistency_points - churn_penalty)
+
+    embed = build_main_embed(
+        "Server Health Score",
+        f"Calculated from the last **14 days** of available join and leave data for **{guild.name}**.",
+        discord.Color.green() if score >= 60 else discord.Color.orange(),
+    )
+    embed.add_field(name="Score", value=f"**{score}/100**", inline=True)
+    embed.add_field(name="Status", value=health_label(score), inline=True)
+    embed.add_field(name="Data Days", value=str(observed_days), inline=True)
+    embed.add_field(name="Joins", value=f"+{summary['joins']}", inline=True)
+    embed.add_field(name="Leaves", value=f"-{summary['leaves']}", inline=True)
+    embed.add_field(name="Net Growth", value=f"{summary['net']:+d}", inline=True)
+    return embed
+
+
+def build_growth_advisor_embed(guild: discord.Guild) -> discord.Embed:
+    rows = get_growth_timeseries(guild.id, days=7)
+    observed_days = count_growth_data_days(rows)
+    if observed_days < 3:
+        return build_not_enough_growth_data_embed("Growth Advisor", guild, observed_days)
+
+    summary = summarize_growth_timeseries(rows)
+    suggestions = []
+    if summary["net"] > 0:
+        suggestions.append("Keep posting the content or events that drove recent joins.")
+    elif summary["net"] < 0:
+        suggestions.append("Run a re-engagement post and ask active members what they want next.")
+    else:
+        suggestions.append("Create one clear weekly reason for members to return and participate.")
+
+    if summary["leaves"] > summary["joins"]:
+        suggestions.append("Review recent announcements, rules, or inactive channels that may be causing churn.")
+    if summary["positive_days"] <= 1:
+        suggestions.append("Schedule a simple invite push or community event on your highest-traffic day.")
+    if summary["joins"] == 0:
+        suggestions.append("Refresh your invite message and place it where new members can see the server value fast.")
+    if len(suggestions) < 3:
+        suggestions.append("Use today's growth and the leaderboard to spot which days create the best momentum.")
+
+    embed = build_main_embed(
+        "Growth Advisor",
+        f"Rule-based advice from the last **7 days** for **{guild.name}**.",
+        discord.Color.blurple(),
+    )
+    embed.add_field(
+        name="Recent Growth",
+        value=f"+{summary['joins']} joins / -{summary['leaves']} leaves / **{summary['net']:+d} net**",
+        inline=False,
+    )
+    embed.add_field(
+        name="Suggestions",
+        value="\n".join(f"- {item}" for item in suggestions[:4]),
+        inline=False,
+    )
+    return embed
+
+
+def build_growth_prediction_embed(guild: discord.Guild) -> discord.Embed:
+    rows = get_growth_timeseries(guild.id, days=14)
+    observed_days = count_growth_data_days(rows)
+    if observed_days < 3:
+        return build_not_enough_growth_data_embed("Growth Prediction", guild, observed_days)
+
+    active_rows = [row for row in rows if int(row["joins"]) > 0 or int(row["leaves"]) > 0]
+    avg_daily_net = sum(row["net"] for row in active_rows) / len(active_rows)
+    projected_7_day_net = round(avg_daily_net * 7)
+    projected_members = max(0, (guild.member_count or 0) + projected_7_day_net)
+
+    embed = build_main_embed(
+        "Growth Prediction",
+        f"Simple projection from recent average net growth for **{guild.name}**.",
+        discord.Color.gold(),
+    )
+    embed.add_field(name="Observed Data Days", value=str(observed_days), inline=True)
+    embed.add_field(name="Avg Net / Data Day", value=f"{avg_daily_net:+.2f}", inline=True)
+    embed.add_field(name="Projected 7-Day Net", value=f"{projected_7_day_net:+d}", inline=True)
+    embed.add_field(name="Current Members", value=str(guild.member_count or 0), inline=True)
+    embed.add_field(name="Projected Members", value=str(projected_members), inline=True)
+    embed.add_field(
+        name="Model",
+        value="Uses recent joins and leaves only. No paid API calls or external AI dependency.",
+        inline=False,
+    )
+    return embed
+
+
 def describe_growth_trend(summary: dict) -> str:
     delta = summary["second_half_net"] - summary["first_half_net"]
     avg = summary["avg_daily_net"]
@@ -1479,6 +1622,19 @@ def generate_growth_dashboard_chart(guild: discord.Guild, days: int = 7) -> io.B
         for text_obj in legend.get_texts():
             text_obj.set_color("#e6edf3")
 
+        if not any(joins) and not any(leaves):
+            ax.text(
+                0.5,
+                0.5,
+                "Not enough growth activity yet",
+                transform=ax.transAxes,
+                ha="center",
+                va="center",
+                fontsize=16,
+                color="#e6edf3",
+                bbox={"boxstyle": "round,pad=0.5", "facecolor": "#21262d", "edgecolor": "#30363d", "alpha": 0.95},
+            )
+
         final_cumulative = cumulative[-1] if cumulative else 0
         final_daily = daily_net[-1] if daily_net else 0
         badge_text = f"Window Net {final_cumulative:+d} • Latest Day {final_daily:+d}"
@@ -1544,12 +1700,13 @@ def build_growth_dashboard_embed(guild: discord.Guild, days: int = 7) -> discord
         for idx, row in enumerate(top_days, start=1)
     ]
 
+    observed_days = count_growth_data_days(rows)
     description = (
         f"Premium analytics for **{guild.name}** across the last **{days}** days.\n"
-        f"Trend: **{trend_text}** • Weekly momentum: **{week_delta_text}**"
+        f"Trend: **{trend_text}** • Weekly momentum: **{week_delta_text}** • Data days: **{observed_days}**"
     )
     embed = build_main_embed(
-        '💎 Elite Growth Dashboard',
+        'Premium Growth Dashboard',
         description,
         build_dashboard_color(summary),
     )
@@ -1696,6 +1853,9 @@ def build_help_embed(include_owner: bool = False, language: Optional[str] = None
             "`/analytics` - Free 7-day growth snapshot\n"
             "`/growthtoday` - Free growth stats for today\n"
             "`/growthleaderboard` - Show top growth days\n"
+            "`/healthscore` - Server health score from growth data\n"
+            "`/advisor` - Rule-based growth suggestions\n"
+            "`/growthpredict` - Simple recent-average growth projection\n"
             "`/dashboard` - Premium analytics dashboard\n"
             "`/premium` - Free vs premium overview\n"
             "`/vote` - Get Top.gg vote link\n"
@@ -3272,6 +3432,48 @@ async def growthleaderboard_slash(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed)
 
 
+
+
+@bot.tree.command(name="healthscore", description="Calculate a safe server health score from growth data")
+async def healthscore_slash(interaction: discord.Interaction):
+    if interaction.guild is None:
+        return await interaction.response.send_message(
+            "This command can only be used in a server.",
+            ephemeral=True,
+        )
+
+    await interaction.response.send_message(
+        embed=build_server_health_embed(interaction.guild),
+        ephemeral=True,
+    )
+
+
+@bot.tree.command(name="advisor", description="Get rule-based growth advice from recent server growth")
+async def advisor_slash(interaction: discord.Interaction):
+    if interaction.guild is None:
+        return await interaction.response.send_message(
+            "This command can only be used in a server.",
+            ephemeral=True,
+        )
+
+    await interaction.response.send_message(
+        embed=build_growth_advisor_embed(interaction.guild),
+        ephemeral=True,
+    )
+
+
+@bot.tree.command(name="growthpredict", description="Project near-term growth from recent averages")
+async def growthpredict_slash(interaction: discord.Interaction):
+    if interaction.guild is None:
+        return await interaction.response.send_message(
+            "This command can only be used in a server.",
+            ephemeral=True,
+        )
+
+    await interaction.response.send_message(
+        embed=build_growth_prediction_embed(interaction.guild),
+        ephemeral=True,
+    )
 
 
 @bot.tree.command(name="dashboard", description="Premium analytics dashboard for this server")
