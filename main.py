@@ -888,10 +888,24 @@ def billing_status_entitles_premium(status: Optional[str]) -> bool:
         "active",
         "on_trial",
         "paused",
-        "past_due",
-        "unpaid",
-        "cancelled",
     }
+
+
+def billing_has_valid_future_ends_at(billing: Optional[dict]) -> bool:
+    if not billing:
+        return False
+    ends_at = iso_to_dt(billing.get("ends_at"))
+    return ends_at is not None and ends_at > datetime.now(UTC)
+
+
+def billing_record_entitles_premium(billing: Optional[dict]) -> bool:
+    if not billing:
+        return False
+
+    status = (billing.get("status") or "").lower()
+    if status in {"cancelled", "past_due", "unpaid"}:
+        return billing_has_valid_future_ends_at(billing)
+    return billing_status_entitles_premium(status)
 
 
 def reconcile_guild_premium(guild_id: int):
@@ -900,7 +914,7 @@ def reconcile_guild_premium(guild_id: int):
         return
 
     billing = db.get_guild_billing(guild_id)
-    if billing and billing_status_entitles_premium(billing.get("status")):
+    if billing_record_entitles_premium(billing):
         db.set_premium(guild_id, True)
 
 
@@ -957,6 +971,13 @@ def should_disable_premium_from_billing_event(event_name: str, status: Optional[
     if event_name == "subscription_updated" and status == "expired":
         return True
     return False
+
+
+def billing_record_requires_premium_removal(billing: Optional[dict]) -> bool:
+    if not billing:
+        return False
+    status = (billing.get("status") or "").lower()
+    return status in {"cancelled", "past_due", "unpaid", "expired"} and not billing_record_entitles_premium(billing)
 
 
 async def process_lemonsqueezy_webhook(payload: dict) -> dict:
@@ -1037,9 +1058,16 @@ async def process_lemonsqueezy_webhook(payload: dict) -> dict:
             test_mode=test_mode,
         )
 
-        if should_enable_premium_from_billing_event(event_name, status):
+        updated_billing = db.get_guild_billing(guild_id)
+        if billing_record_entitles_premium(updated_billing):
             db.set_premium(guild_id, True)
-        elif should_disable_premium_from_billing_event(event_name, status) and guild_id not in AUTO_PREMIUM_GUILD_IDS:
+        elif (
+            (
+                should_disable_premium_from_billing_event(event_name, status)
+                or billing_record_requires_premium_removal(updated_billing)
+            )
+            and guild_id not in AUTO_PREMIUM_GUILD_IDS
+        ):
             db.set_premium(guild_id, False)
     else:
         log.warning(
@@ -1091,6 +1119,19 @@ def premium_required():
             return True
         raise commands.CheckFailure("This feature is premium-only for this server.")
     return commands.check(predicate)
+
+
+async def require_guild_context(ctx: commands.Context) -> bool:
+    if ctx.guild is not None:
+        return True
+    await ctx.send(
+        embed=build_main_embed(
+            "Server Only",
+            "Use this command in a server.",
+            discord.Color.red(),
+        )
+    )
+    return False
 
 
 def current_utc_day_str() -> str:
@@ -2396,6 +2437,8 @@ async def daily_reports_loop():
     for guild in bot.guilds:
         try:
             settings = db.get_guild_settings(guild.id)
+            if not settings.get("premium"):
+                continue
             if not settings.get("report_channel_id"):
                 continue
             if settings.get("last_daily_report_date") == report_day_str:
@@ -2700,6 +2743,9 @@ async def stats_command(ctx: commands.Context):
 
 @bot.command(name="serverstatus")
 async def serverstatus_command(ctx: commands.Context):
+    if not await require_guild_context(ctx):
+        return
+
     settings = db.get_guild_settings(ctx.guild.id)
     milestone_roles = settings.get("milestone_roles", {})
 
@@ -2740,50 +2786,10 @@ async def serverstatus_command(ctx: commands.Context):
 
 @bot.command(name="premium")
 async def premium_command(ctx: commands.Context):
+    if not await require_guild_context(ctx):
+        return
+
     await ctx.send(embed=build_premium_overview_embed(ctx.guild, ctx.author))
-    return
-
-    settings = db.get_guild_settings(ctx.guild.id)
-
-    embed = build_main_embed(
-        "Premium Status",
-        f"This server premium status is: **{'Enabled' if settings['premium'] else 'Disabled'}**",
-        discord.Color.gold() if settings["premium"] else discord.Color.blurple(),
-    )
-
-    embed.add_field(
-        name="Server Premium Features",
-        value=(
-            "• Weekly growth report command\n"
-            "• Real-time growth/drop alerts\n"
-            "• Custom growth alert threshold\n"
-            "• Alert toggle controls"
-        ),
-        inline=False,
-    )
-
-    embed.add_field(
-        name="Your Vote Premium",
-        value=(
-            f"**Active** — {get_vote_premium_remaining_text(ctx.author.id)}"
-            if is_vote_premium_active(ctx.author.id)
-            else "Inactive — vote to unlock temporary personal perks and reward role access"
-        ),
-        inline=False,
-    )
-
-    billing = db.get_guild_billing(ctx.guild.id)
-    embed.add_field(
-        name="Billing",
-        value=(
-            (billing.get("status_formatted") or billing.get("status") or "Linked")
-            if billing else
-            f"Not linked yet — use `{DEFAULT_PREFIX}buypremium` to purchase."
-        ),
-        inline=False,
-    )
-
-    await ctx.send(embed=embed)
 
 
 @bot.command(name="buypremium")
@@ -2856,6 +2862,9 @@ async def removemilestone_command(ctx: commands.Context, member_count: int):
 
 @bot.command(name="milestones")
 async def milestones_command(ctx: commands.Context):
+    if not await require_guild_context(ctx):
+        return
+
     mapping = db.get_milestone_roles(ctx.guild.id)
 
     if not mapping:
@@ -2934,6 +2943,9 @@ async def setvoterole_command(
 
 @bot.command(name="reportchannel")
 async def reportchannel_command(ctx: commands.Context):
+    if not await require_guild_context(ctx):
+        return
+
     settings = db.get_guild_settings(ctx.guild.id)
     channel_id = settings.get("report_channel_id")
 
@@ -2959,28 +2971,10 @@ async def reportchannel_command(ctx: commands.Context):
 
 @bot.command(name="growthtoday")
 async def growthtoday_command(ctx: commands.Context):
-    await ctx.send(embed=build_growth_today_embed(ctx.guild))
-    return
+    if not await require_guild_context(ctx):
+        return
 
-    stats = db.get_growth_for_date(ctx.guild.id, current_utc_day_str())
-    embed = build_main_embed(
-        "📊 Today's Growth",
-        f"Tracking for **{current_utc_day_str()} UTC**",
-        discord.Color.green()
-        if stats["net"] > 0
-        else discord.Color.orange()
-        if stats["net"] < 0
-        else discord.Color.blurple(),
-    )
-    embed.add_field(name="Joins", value=f"+{stats['joins']}", inline=True)
-    embed.add_field(name="Leaves", value=f"-{stats['leaves']}", inline=True)
-    embed.add_field(name="Net Growth", value=f"{stats['net']:+d}", inline=True)
-    embed.add_field(
-        name="Message",
-        value=growth_message_for_stats(stats["joins"], stats["leaves"]),
-        inline=False,
-    )
-    await ctx.send(embed=embed)
+    await ctx.send(embed=build_growth_today_embed(ctx.guild))
 
 
 @bot.command(name="analytics")
@@ -3032,6 +3026,9 @@ async def growthweek_command(ctx: commands.Context):
 
 @bot.command(name="bestday")
 async def bestday_command(ctx: commands.Context):
+    if not await require_guild_context(ctx):
+        return
+
     data = db.get_best_growth_day(ctx.guild.id)
 
     if not data:
@@ -3055,6 +3052,9 @@ async def bestday_command(ctx: commands.Context):
 
 @bot.command(name="growthleaderboard")
 async def growthleaderboard_command(ctx: commands.Context):
+    if not await require_guild_context(ctx):
+        return
+
     embed = build_growth_leaderboard_embed(ctx.guild)
     await ctx.send(embed=embed)
 
@@ -3155,6 +3155,7 @@ async def alerts_command(ctx: commands.Context, state: str):
 
 @bot.command(name="senddailyreport")
 @admin_or_manage_guild()
+@premium_required()
 async def senddailyreport_command(ctx: commands.Context):
     settings = db.get_guild_settings(ctx.guild.id)
     if not settings.get("report_channel_id"):
@@ -3406,10 +3407,9 @@ async def votestatus_slash(
 # OWNER COMMANDS
 # =========================
 @bot.command(name="amowner")
+@owner_only()
 async def amowner_command(ctx: commands.Context):
-    await ctx.send(
-        f"Your ID: {ctx.author.id}\nOWNER_IDS: {OWNER_IDS}\nOwner: {ctx.author.id in OWNER_IDS}"
-    )
+    await ctx.send("Owner access confirmed.")
 
 
 @bot.command(name="setpremium")
