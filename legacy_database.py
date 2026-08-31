@@ -37,12 +37,13 @@ CURRENT_GUILD_COLUMNS_SQLITE = {
 
 
 class Database:
-    def __init__(self, sqlite_path: str = "legacy_bot.db", database_url: str = ""):
+    def __init__(self, sqlite_path: str = "legacy_bot.db", database_url: str = "", initialize_schema: bool = True):
         self.sqlite_path = sqlite_path
         self.database_url = (database_url or "").strip()
         self.backend = "postgres" if self.database_url else "sqlite"
         self.conn = self._connect()
-        self._setup()
+        if initialize_schema:
+            self.initialize_schema()
 
     def _connect(self):
         if self.backend == "postgres":
@@ -117,7 +118,7 @@ class Database:
             with self.transaction():
                 self.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}")
 
-    def _setup(self):
+    def initialize_schema(self):
         if self.backend == "postgres":
             self._setup_postgres()
         else:
@@ -685,10 +686,14 @@ class Database:
         return counts
 
 
-def create_database_from_env(database_url: Optional[str] = None, sqlite_path: Optional[str] = None) -> Database:
+def create_database_from_env(
+    database_url: Optional[str] = None,
+    sqlite_path: Optional[str] = None,
+    initialize_schema: bool = True,
+) -> Database:
     url = database_url if database_url is not None else os.getenv("DATABASE_URL", "")
     path = sqlite_path or os.getenv("DATABASE_PATH", "legacy_bot.db")
-    return Database(sqlite_path=path, database_url=url or "")
+    return Database(sqlite_path=path, database_url=url or "", initialize_schema=initialize_schema)
 
 
 def redact_database_url(value: str) -> str:
