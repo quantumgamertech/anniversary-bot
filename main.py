@@ -379,10 +379,7 @@ def admin_or_manage_guild():
     async def predicate(ctx: commands.Context):
         if ctx.guild is None:
             raise commands.CheckFailure("This command can only be used in a server.")
-        if (
-            ctx.author.guild_permissions.administrator
-            or ctx.author.guild_permissions.manage_guild
-        ):
+        if has_admin_or_manage_guild(ctx.author):
             return True
         raise commands.CheckFailure(
             "You need Administrator or Manage Server permissions to use this command."
@@ -410,6 +407,54 @@ async def require_guild_context(ctx: commands.Context) -> bool:
             "Use this command in a server.",
             discord.Color.red(),
         )
+    )
+    return False
+
+
+def has_admin_or_manage_guild(user) -> bool:
+    perms = getattr(user, "guild_permissions", None)
+    return bool(perms and (perms.administrator or perms.manage_guild))
+
+
+async def require_slash_guild(interaction: discord.Interaction) -> bool:
+    if interaction.guild is not None:
+        return True
+    await interaction.response.send_message(
+        embed=build_main_embed(
+            "Server Only",
+            "This command can only be used in a server.",
+            discord.Color.red(),
+        ),
+        ephemeral=True,
+    )
+    return False
+
+
+async def require_slash_admin(interaction: discord.Interaction) -> bool:
+    if has_admin_or_manage_guild(interaction.user):
+        return True
+    await interaction.response.send_message(
+        embed=build_main_embed(
+            "Access Denied",
+            "You need Administrator or Manage Server permissions to use this command.",
+            discord.Color.red(),
+        ),
+        ephemeral=True,
+    )
+    return False
+
+
+async def require_slash_premium(interaction: discord.Interaction) -> bool:
+    settings = db.get_guild_settings(interaction.guild.id)
+    if settings["premium"]:
+        return True
+    await interaction.response.send_message(
+        embed=build_main_embed(
+            "Premium Required",
+            "This feature is premium-only for this server.",
+            discord.Color.red(),
+        ),
+        ephemeral=True,
     )
     return False
 
@@ -1064,96 +1109,78 @@ def build_help_embed(include_owner: bool = False, language: Optional[str] = None
     embed = build_main_embed(
         f"{BOT_NAME} Help" if not spanish else f"Ayuda de {BOT_NAME}",
         (
-            "Here are the available commands. Start with `/start` or `/setup` if this is a new server."
+            "Slash commands are the primary interface. Legacy prefix commands using ! remain available for compatibility."
             if not spanish else
-            "Aqui estan los comandos disponibles. Usa `/start` o `/setup` si este es un servidor nuevo."
+            "Los comandos slash son la interfaz principal. Los comandos legacy con ! siguen disponibles por compatibilidad."
         ),
     )
 
     embed.add_field(
         name="Start Here" if not spanish else "Primeros Pasos",
         value=(
-            f"`{DEFAULT_PREFIX}ping` - Check bot latency\n"
-            f"`{DEFAULT_PREFIX}help` - Show this help menu\n"
-            f"`{DEFAULT_PREFIX}help es` - Ver ayuda en espanol\n"
-            f"`{DEFAULT_PREFIX}setup` - New server setup guide\n"
-            f"`{DEFAULT_PREFIX}about` - About the bot\n"
-            f"`{DEFAULT_PREFIX}invite` - Bot invite link\n"
-            f"`{DEFAULT_PREFIX}stats` - Global bot stats\n"
-            f"`{DEFAULT_PREFIX}serverstatus` - Current server info"
-        ),
-        inline=False,
-    )
-
-    embed.add_field(
-        name="Free Commands" if not spanish else "Comandos Gratis",
-        value=(
-            f"`{DEFAULT_PREFIX}growthtoday` - Today's joins, leaves, and net growth\n"
-            f"`{DEFAULT_PREFIX}analytics` - Free 7-day growth snapshot\n"
-            f"`{DEFAULT_PREFIX}bestday` - Best growth day record\n"
-            f"`{DEFAULT_PREFIX}growthleaderboard` - Top server growth days\n"
-            f"`{DEFAULT_PREFIX}vote` - Top.gg vote link\n"
-            f"`{DEFAULT_PREFIX}votestatus` - Check your vote rewards"
-        ),
-        inline=False,
-    )
-
-    embed.add_field(
-        name="Setup / Milestones",
-        value=(
-            f"`{DEFAULT_PREFIX}setup` - Show setup instructions\n"
-            f"`{DEFAULT_PREFIX}setmilestone <member_count> @role` - Set milestone role\n"
-            f"`{DEFAULT_PREFIX}removemilestone <member_count>` - Remove milestone role\n"
-            f"`{DEFAULT_PREFIX}milestones` - List milestone roles\n"
-            f"`{DEFAULT_PREFIX}setvoterole @role` - Set vote reward role"
-        ),
-        inline=False,
-    )
-
-    embed.add_field(
-        name="Premium Growth Tools" if not spanish else "Herramientas Premium",
-        value=(
-            f"`{DEFAULT_PREFIX}setreport #channel` - Set daily report channel\n"
-            f"`{DEFAULT_PREFIX}reportchannel` - Show report channel\n"
-            f"`{DEFAULT_PREFIX}growthweek` - Weekly growth analytics (Premium)\n"
-            f"`{DEFAULT_PREFIX}dashboard [days]` - Premium analytics dashboard\n"
-            f"`{DEFAULT_PREFIX}setalertthreshold <number>` - Set alert threshold (Premium)\n"
-            f"`{DEFAULT_PREFIX}alerts on/off` - Toggle alerts (Premium)"
-        ),
-        inline=False,
-    )
-
-    embed.add_field(
-        name="Slash Commands",
-        value=(
             "`/ping` - Check bot latency\n"
             "`/help` - Show this help menu\n"
             "`/start` - New server quick-start guide\n"
             "`/setup` - Setup guide for server admins\n"
+            "`/about` - About the bot\n"
+            "`/invite` - Bot invite link\n"
+            "`/stats` - Global bot stats\n"
+            "`/serverstatus` - Current server info"
+        ),
+        inline=False,
+    )
+    embed.add_field(
+        name="Free Growth" if not spanish else "Crecimiento Gratis",
+        value=(
+            "`/growthtoday` - Today's joins, leaves, and net growth\n"
             "`/analytics` - Free 7-day growth snapshot\n"
-            "`/growthtoday` - Free growth stats for today\n"
-            "`/growthleaderboard` - Show top growth days\n"
-            "`/healthscore` - Server health score from growth data\n"
+            "`/bestday` - Best growth day record\n"
+            "`/growthleaderboard` - Top server growth days\n"
+            "`/healthscore` - Server health score from available data\n"
             "`/advisor` - Rule-based growth suggestions\n"
-            "`/growthpredict` - Simple recent-average growth projection\n"
+            "`/growthpredict` - Recent-average growth projection"
+        ),
+        inline=False,
+    )
+    embed.add_field(
+        name="Admin / Setup" if not spanish else "Admin / Configuracion",
+        value=(
+            "`/setreport` - Set daily report channel\n"
+            "`/reportchannel` - Show report channel\n"
+            "`/setmilestone` - Set milestone role\n"
+            "`/removemilestone` - Remove milestone role\n"
+            "`/milestones` - List milestone roles\n"
+            "`/setvoterole` - Set or clear vote reward role"
+        ),
+        inline=False,
+    )
+    embed.add_field(
+        name="Premium" if not spanish else "Premium",
+        value=(
             "`/dashboard` - Premium analytics dashboard\n"
+            "`/growthweek` - Weekly growth analytics\n"
+            "`/setalertthreshold` - Set premium growth alert threshold\n"
+            "`/alerts` - Toggle premium growth alerts\n"
             "`/premium` - Free vs premium overview\n"
-            "`/vote` - Get Top.gg vote link\n"
-            "`/votestatus` - Check your vote rewards\n"
             "`/buypremium` - Get a premium checkout link\n"
             "`/premiumstatus` - View premium billing status"
         ),
         inline=False,
     )
-
     embed.add_field(
-        name="Free vs Premium" if not spanish else "Gratis vs Premium",
+        name="Voting" if not spanish else "Votos",
         value=(
-            "Free servers can track daily growth, view leaderboards, configure milestones, and use Top.gg vote rewards.\n"
-            "Premium adds the dashboard, weekly growth analytics, live alerts, custom alert thresholds, and daily report automation."
+            "`/vote` - Top.gg vote link\n"
+            "`/votestatus` - Check your vote rewards"
+        ),
+        inline=False,
+    )
+    embed.add_field(
+        name="Compatibility" if not spanish else "Compatibilidad",
+        value=(
+            f"Legacy prefix commands using `{DEFAULT_PREFIX}` remain available for compatibility."
             if not spanish else
-            "Los servidores gratis pueden ver crecimiento diario, rankings, hitos y recompensas de Top.gg.\n"
-            "Premium agrega dashboard, analiticas semanales, alertas, limites personalizados y reportes diarios."
+            f"Los comandos legacy con `{DEFAULT_PREFIX}` siguen disponibles por compatibilidad."
         ),
         inline=False,
     )
@@ -1172,7 +1199,6 @@ def build_help_embed(include_owner: bool = False, language: Optional[str] = None
         )
 
     return embed
-
 
 def build_setup_embed(guild: discord.Guild, language: Optional[str] = None) -> discord.Embed:
     spanish = wants_spanish(language)
@@ -1392,6 +1418,155 @@ def build_premium_overview_embed(guild: discord.Guild, user) -> discord.Embed:
     )
 
     return embed
+
+
+def build_about_embed() -> discord.Embed:
+    embed = build_main_embed(
+        f"About {BOT_NAME}",
+        f"{BOT_NAME} is a multi-server Discord bot with premium support, milestone role tools, install tracking, growth notifications, Top.gg vote rewards, and a growth leaderboard.",
+    )
+    embed.add_field(name="Prefix", value=f"`{DEFAULT_PREFIX}`", inline=True)
+    embed.add_field(name="Servers", value=str(len(bot.guilds)), inline=True)
+    embed.add_field(name="Support", value=f"[Join Support Server]({SUPPORT_SERVER_URL})", inline=False)
+    return embed
+
+
+def build_invite_embed() -> discord.Embed:
+    embed = build_main_embed(f"Invite {BOT_NAME}", f"[Click here to invite {BOT_NAME}]({BOT_INVITE_URL})")
+    embed.add_field(name="Support", value=f"[Support Server]({SUPPORT_SERVER_URL})", inline=False)
+    return embed
+
+
+def build_stats_embed() -> discord.Embed:
+    join_count = db.get_stat("join_count")
+    remove_count = db.get_stat("remove_count")
+    embed = build_main_embed(f"{BOT_NAME} Stats", "Global bot statistics.")
+    embed.add_field(name="Current Servers", value=str(len(bot.guilds)), inline=True)
+    embed.add_field(name="Join Events", value=str(join_count), inline=True)
+    embed.add_field(name="Remove Events", value=str(remove_count), inline=True)
+    embed.add_field(name="Net Installs", value=str(join_count - remove_count), inline=True)
+    embed.add_field(name="Users Reached", value=str(total_member_estimate()), inline=True)
+    embed.add_field(name="Top.gg Votes", value=str(db.get_stat("topgg_votes_total")), inline=True)
+    embed.add_field(name="Latency", value=f"{round(bot.latency * 1000)} ms", inline=True)
+    return embed
+
+
+def build_vote_embed(guild: Optional[discord.Guild]) -> discord.Embed:
+    embed = build_main_embed(
+        "🗳️ Vote for Legacy Bot",
+        f"[Click here to vote on Top.gg]({get_topgg_vote_url()})",
+        discord.Color.gold(),
+    )
+    embed.add_field(name="Reward", value=f"Each vote grants **{TOPGG_VOTE_PREMIUM_HOURS} hours** of temporary vote premium.", inline=False)
+    embed.add_field(name="Bonus", value="If Top.gg marks the vote as weekend, the premium time is doubled automatically.", inline=False)
+    if guild is not None:
+        role = get_vote_reward_role(guild)
+        embed.add_field(name="This Server's Reward Role", value=role.mention if role else "Not configured", inline=False)
+    return embed
+
+
+def build_server_status_embed(guild: discord.Guild) -> discord.Embed:
+    settings = db.get_guild_settings(guild.id)
+    milestone_roles = settings.get("milestone_roles", {})
+    report_channel_display = f"<#{settings['report_channel_id']}>" if settings.get("report_channel_id") else "Not Set"
+    vote_role_display = f"<@&{settings['vote_reward_role_id']}>" if settings.get("vote_reward_role_id") else "Not Set"
+    embed = build_main_embed(f"Server Status - {guild.name}", "Current server information.")
+    embed.add_field(name="Server ID", value=str(guild.id), inline=True)
+    embed.add_field(name="Members", value=str(guild.member_count or 0), inline=True)
+    embed.add_field(name="Premium", value="Yes" if settings["premium"] else "No", inline=True)
+    embed.add_field(name="Owner", value=str(guild.owner) if guild.owner else "Unknown", inline=True)
+    embed.add_field(name="Report Channel", value=report_channel_display, inline=True)
+    embed.add_field(name="Milestone Roles", value=str(len(milestone_roles)), inline=True)
+    embed.add_field(name="Alerts Enabled", value="Yes" if settings["alerts_enabled"] else "No", inline=True)
+    embed.add_field(name="Vote Reward Role", value=vote_role_display, inline=True)
+    embed.add_field(name="Created", value=discord.utils.format_dt(guild.created_at, style="F"), inline=False)
+    return embed
+
+
+def build_set_milestone_embed(guild: discord.Guild, member_count: int, role: discord.Role) -> discord.Embed:
+    db.set_milestone_role(guild.id, member_count, role.id)
+    return build_main_embed("Milestone Saved", f"At **{member_count}** members, the role {role.mention} will be assigned to the server owner.", discord.Color.green())
+
+
+def build_remove_milestone_embed(guild: discord.Guild, member_count: int) -> discord.Embed:
+    db.remove_milestone_role(guild.id, member_count)
+    return build_main_embed("Milestone Removed", f"Removed milestone role for **{member_count}** members.", discord.Color.green())
+
+
+def build_milestones_embed(guild: discord.Guild) -> discord.Embed:
+    mapping = db.get_milestone_roles(guild.id)
+    if not mapping:
+        return build_main_embed("Milestone Roles", "No milestone roles have been configured for this server yet.")
+    lines = []
+    for member_count in sorted(mapping.keys()):
+        role = guild.get_role(mapping[member_count])
+        role_text = role.mention if role else f"`Deleted Role ({mapping[member_count]})`"
+        lines.append(f"**{member_count} members** → {role_text}")
+    return build_main_embed("Milestone Roles", "\n".join(lines))
+
+
+def build_report_channel_embed(guild: discord.Guild) -> discord.Embed:
+    settings = db.get_guild_settings(guild.id)
+    channel_id = settings.get("report_channel_id")
+    if not channel_id:
+        return build_main_embed("Report Channel", f"No report channel has been set yet. Use `{DEFAULT_PREFIX}setreport #channel` or `/setreport`.", discord.Color.orange())
+    channel = guild.get_channel(channel_id)
+    channel_text = channel.mention if channel else f"`Deleted Channel ({channel_id})`"
+    return build_main_embed("Report Channel", f"Daily growth reports are set to {channel_text}.", discord.Color.green())
+
+
+def build_set_report_embed(guild: discord.Guild, channel: discord.TextChannel) -> discord.Embed:
+    db.set_report_channel(guild.id, channel.id)
+    return build_main_embed("Report Channel Updated", f"Daily growth reports will be sent in {channel.mention}.", discord.Color.green())
+
+
+async def build_set_vote_role_embed(guild: discord.Guild, role: Optional[discord.Role]) -> discord.Embed:
+    if role is None:
+        db.set_vote_reward_role(guild.id, None)
+        return build_main_embed("Vote Reward Role Cleared", "The vote reward role has been cleared for this server.", discord.Color.orange())
+    db.set_vote_reward_role(guild.id, role.id)
+    for member in guild.members:
+        if not member.bot:
+            await sync_vote_reward_role_for_member(member)
+    return build_main_embed("Vote Reward Role Updated", f"Active Top.gg voters will receive {role.mention} while their vote premium is active.", discord.Color.green())
+
+
+def build_weekly_growth_embed(guild: discord.Guild) -> discord.Embed:
+    end_date_obj = datetime.now(UTC).date()
+    start_date_obj = end_date_obj - timedelta(days=6)
+    stats = db.get_growth_range(guild.id, start_date_obj.isoformat(), end_date_obj.isoformat())
+    top_days = db.get_top_growth_days(guild.id, limit=3)
+    embed = build_main_embed("📈 Weekly Growth Report", f"Stats from **{start_date_obj.isoformat()}** to **{end_date_obj.isoformat()}** UTC", discord.Color.gold())
+    embed.add_field(name="Joins", value=f"+{stats['joins']}", inline=True)
+    embed.add_field(name="Leaves", value=f"-{stats['leaves']}", inline=True)
+    embed.add_field(name="Net Growth", value=f"{stats['net']:+d}", inline=True)
+    if top_days:
+        lines = [f"**{row['date']}** • Net {int(row['net']):+d} (+{int(row['joins'])} / -{int(row['leaves'])})" for row in top_days]
+        embed.add_field(name="Best Growth Days", value="\n".join(lines), inline=False)
+    return embed
+
+
+def build_best_day_embed(guild: discord.Guild) -> discord.Embed:
+    data = db.get_best_growth_day(guild.id)
+    if not data:
+        return build_main_embed("🏆 Best Growth Day", "No growth data recorded yet.", discord.Color.blurple())
+    embed = build_main_embed("🏆 Best Growth Day", f"**{data['net']:+d} members** on **{data['date']}**", discord.Color.gold())
+    embed.add_field(name="Joins", value=f"+{data['joins']}", inline=True)
+    embed.add_field(name="Leaves", value=f"-{data['leaves']}", inline=True)
+    return embed
+
+
+def build_alert_threshold_updated_embed(guild: discord.Guild, threshold: int) -> discord.Embed:
+    db.set_growth_alert_threshold(guild.id, threshold)
+    db.set_last_alert_net(guild.id, None)
+    return build_main_embed("Alert Threshold Updated", f"Growth alerts will now trigger at **±{threshold}** net growth in one UTC day.", discord.Color.green())
+
+
+def build_alerts_updated_embed(guild: discord.Guild, enabled: bool) -> discord.Embed:
+    db.set_alerts_enabled(guild.id, enabled)
+    if enabled:
+        db.set_last_alert_net(guild.id, None)
+    return build_main_embed("Alerts Updated", f"Growth alerts are now **{'enabled' if enabled else 'disabled'}** for this server.", discord.Color.green())
 
 
 async def maybe_fire_milestone(guild: discord.Guild):
@@ -2043,12 +2218,16 @@ async def on_app_command_error(
 ):
     log.exception("Slash command error: %s", error)
 
-    message = "Something went wrong while running that slash command."
+    embed = build_main_embed(
+        "Error",
+        "Something went wrong while running that slash command.",
+        discord.Color.red(),
+    )
     try:
         if interaction.response.is_done():
-            await interaction.followup.send(message, ephemeral=True)
+            await interaction.followup.send(embed=embed, ephemeral=True)
         else:
-            await interaction.response.send_message(message, ephemeral=True)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
     except Exception:
         pass
 
@@ -2655,18 +2834,10 @@ async def start_slash(interaction: discord.Interaction, language: Optional[str] 
 @bot.tree.command(name="setup", description="Setup guide for server admins")
 @app_commands.describe(language="Optional: use 'es' for Spanish onboarding")
 async def setup_slash(interaction: discord.Interaction, language: Optional[str] = None):
-    if interaction.guild is None:
-        return await interaction.response.send_message(
-            "This command can only be used in a server.",
-            ephemeral=True,
-        )
-
-    perms = interaction.user.guild_permissions if isinstance(interaction.user, discord.Member) else None
-    if perms is None or not (perms.administrator or perms.manage_guild):
-        return await interaction.response.send_message(
-            "You need Administrator or Manage Server permissions to use this command.",
-            ephemeral=True,
-        )
+    if not await require_slash_guild(interaction):
+        return
+    if not await require_slash_admin(interaction):
+        return
 
     embed = build_setup_embed(interaction.guild, language=language)
     await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -2853,26 +3024,7 @@ async def premiumstatus_slash(interaction: discord.Interaction):
 
 @bot.tree.command(name="vote", description="Get the Top.gg vote link")
 async def vote_slash(interaction: discord.Interaction):
-    embed = build_main_embed(
-        "🗳️ Vote for Legacy Bot",
-        f"[Click here to vote on Top.gg]({get_topgg_vote_url()})",
-        discord.Color.gold(),
-    )
-    embed.add_field(
-        name="Reward",
-        value=f"Each vote grants **{TOPGG_VOTE_PREMIUM_HOURS} hours** of temporary vote premium.",
-        inline=False,
-    )
-
-    if interaction.guild is not None:
-        role = get_vote_reward_role(interaction.guild)
-        embed.add_field(
-            name="This Server's Reward Role",
-            value=role.mention if role else "Not configured",
-            inline=False,
-        )
-
-    await interaction.response.send_message(embed=embed, ephemeral=True)
+    await interaction.response.send_message(embed=build_vote_embed(interaction.guild), ephemeral=True)
 
 
 @bot.tree.command(name="votestatus", description="Check your Top.gg vote rewards")
@@ -2883,6 +3035,134 @@ async def votestatus_slash(
     target = member or interaction.user
     embed = build_vote_status_embed(target, interaction.guild)
     await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@bot.tree.command(name="about", description="About Legacy Bot")
+async def about_slash(interaction: discord.Interaction):
+    await interaction.response.send_message(embed=build_about_embed(), ephemeral=True)
+
+
+@bot.tree.command(name="invite", description="Get the bot invite link")
+async def invite_slash(interaction: discord.Interaction):
+    await interaction.response.send_message(embed=build_invite_embed(), ephemeral=True)
+
+
+@bot.tree.command(name="stats", description="Show global bot stats")
+async def stats_slash(interaction: discord.Interaction):
+    await interaction.response.send_message(embed=build_stats_embed(), ephemeral=True)
+
+
+@bot.tree.command(name="serverstatus", description="Show current server configuration and status")
+async def serverstatus_slash(interaction: discord.Interaction):
+    if not await require_slash_guild(interaction):
+        return
+    await interaction.response.send_message(embed=build_server_status_embed(interaction.guild), ephemeral=True)
+
+
+@bot.tree.command(name="setreport", description="Set the daily growth report channel")
+@app_commands.describe(channel="Channel where daily growth reports should be sent")
+async def setreport_slash(interaction: discord.Interaction, channel: discord.TextChannel):
+    if not await require_slash_guild(interaction):
+        return
+    if not await require_slash_admin(interaction):
+        return
+    perms = channel.permissions_for(interaction.guild.me)
+    if not perms.send_messages or not perms.embed_links:
+        return await interaction.response.send_message(
+            embed=build_main_embed("Missing Permissions", f"I need **Send Messages** and **Embed Links** in {channel.mention}.", discord.Color.red()),
+            ephemeral=True,
+        )
+    await interaction.response.send_message(embed=build_set_report_embed(interaction.guild, channel), ephemeral=True)
+
+
+@bot.tree.command(name="reportchannel", description="Show the configured daily report channel")
+async def reportchannel_slash(interaction: discord.Interaction):
+    if not await require_slash_guild(interaction):
+        return
+    await interaction.response.send_message(embed=build_report_channel_embed(interaction.guild), ephemeral=True)
+
+
+@bot.tree.command(name="setmilestone", description="Set a role for a member-count milestone")
+@app_commands.describe(member_count="Member count that triggers the milestone", role="Role assigned when the milestone is reached")
+async def setmilestone_slash(interaction: discord.Interaction, member_count: int, role: discord.Role):
+    if not await require_slash_guild(interaction):
+        return
+    if not await require_slash_admin(interaction):
+        return
+    if member_count <= 0:
+        return await interaction.response.send_message(embed=build_main_embed("Invalid Member Count", "Member count must be greater than 0.", discord.Color.red()), ephemeral=True)
+    await interaction.response.send_message(embed=build_set_milestone_embed(interaction.guild, member_count, role), ephemeral=True)
+
+
+@bot.tree.command(name="removemilestone", description="Remove a member-count milestone role")
+@app_commands.describe(member_count="Member count milestone to remove")
+async def removemilestone_slash(interaction: discord.Interaction, member_count: int):
+    if not await require_slash_guild(interaction):
+        return
+    if not await require_slash_admin(interaction):
+        return
+    await interaction.response.send_message(embed=build_remove_milestone_embed(interaction.guild, member_count), ephemeral=True)
+
+
+@bot.tree.command(name="milestones", description="List configured milestone roles")
+async def milestones_slash(interaction: discord.Interaction):
+    if not await require_slash_guild(interaction):
+        return
+    await interaction.response.send_message(embed=build_milestones_embed(interaction.guild), ephemeral=True)
+
+
+@bot.tree.command(name="setvoterole", description="Set or clear the Top.gg vote reward role")
+@app_commands.describe(role="Role for active voters. Leave empty to clear.")
+async def setvoterole_slash(interaction: discord.Interaction, role: Optional[discord.Role] = None):
+    if not await require_slash_guild(interaction):
+        return
+    if not await require_slash_admin(interaction):
+        return
+    await interaction.response.defer(ephemeral=True)
+    embed = await build_set_vote_role_embed(interaction.guild, role)
+    await interaction.followup.send(embed=embed, ephemeral=True)
+
+
+@bot.tree.command(name="bestday", description="Show the best recorded growth day")
+async def bestday_slash(interaction: discord.Interaction):
+    if not await require_slash_guild(interaction):
+        return
+    await interaction.response.send_message(embed=build_best_day_embed(interaction.guild), ephemeral=True)
+
+
+@bot.tree.command(name="growthweek", description="Premium weekly growth analytics")
+async def growthweek_slash(interaction: discord.Interaction):
+    if not await require_slash_guild(interaction):
+        return
+    if not await require_slash_premium(interaction):
+        return
+    await interaction.response.send_message(embed=build_weekly_growth_embed(interaction.guild), ephemeral=True)
+
+
+@bot.tree.command(name="setalertthreshold", description="Set the premium daily growth alert threshold")
+@app_commands.describe(threshold="Net growth change that triggers an alert")
+async def setalertthreshold_slash(interaction: discord.Interaction, threshold: int):
+    if not await require_slash_guild(interaction):
+        return
+    if not await require_slash_admin(interaction):
+        return
+    if not await require_slash_premium(interaction):
+        return
+    if threshold <= 0:
+        return await interaction.response.send_message(embed=build_main_embed("Invalid Threshold", "Threshold must be greater than 0.", discord.Color.red()), ephemeral=True)
+    await interaction.response.send_message(embed=build_alert_threshold_updated_embed(interaction.guild, threshold), ephemeral=True)
+
+
+@bot.tree.command(name="alerts", description="Turn premium growth alerts on or off")
+@app_commands.choices(state=[app_commands.Choice(name="on", value="on"), app_commands.Choice(name="off", value="off")])
+async def alerts_slash(interaction: discord.Interaction, state: app_commands.Choice[str]):
+    if not await require_slash_guild(interaction):
+        return
+    if not await require_slash_admin(interaction):
+        return
+    if not await require_slash_premium(interaction):
+        return
+    await interaction.response.send_message(embed=build_alerts_updated_embed(interaction.guild, state.value == "on"), ephemeral=True)
 
 
 # =========================
