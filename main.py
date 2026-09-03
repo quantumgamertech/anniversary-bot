@@ -1104,12 +1104,12 @@ def wants_spanish(*values: Optional[str]) -> bool:
     return False
 
 
-def build_help_embed(include_owner: bool = False, language: Optional[str] = None) -> discord.Embed:
+def build_public_slash_help_embed(language: Optional[str] = None) -> discord.Embed:
     spanish = wants_spanish(language)
     embed = build_main_embed(
         f"{BOT_NAME} Help" if not spanish else f"Ayuda de {BOT_NAME}",
         (
-            "Slash commands are the primary interface. Legacy prefix commands using ! remain available for compatibility."
+            "Slash commands are the primary interface. Legacy ! prefix commands remain available for compatibility."
             if not spanish else
             "Los comandos slash son la interfaz principal. Los comandos legacy con ! siguen disponibles por compatibilidad."
         ),
@@ -1130,12 +1130,14 @@ def build_help_embed(include_owner: bool = False, language: Optional[str] = None
         inline=False,
     )
     embed.add_field(
-        name="Free Growth" if not spanish else "Crecimiento Gratis",
+        name="Growth & Analytics" if not spanish else "Crecimiento y Analiticas",
         value=(
             "`/growthtoday` - Today's joins, leaves, and net growth\n"
             "`/analytics` - Free 7-day growth snapshot\n"
             "`/bestday` - Best growth day record\n"
             "`/growthleaderboard` - Top server growth days\n"
+            "`/dashboard` - Premium analytics dashboard\n"
+            "`/growthweek` - Weekly growth analytics\n"
             "`/healthscore` - Server health score from available data\n"
             "`/advisor` - Rule-based growth suggestions\n"
             "`/growthpredict` - Recent-average growth projection"
@@ -1143,7 +1145,7 @@ def build_help_embed(include_owner: bool = False, language: Optional[str] = None
         inline=False,
     )
     embed.add_field(
-        name="Admin / Setup" if not spanish else "Admin / Configuracion",
+        name="Setup & Milestones" if not spanish else "Configuracion y Metas",
         value=(
             "`/setreport` - Set daily report channel\n"
             "`/reportchannel` - Show report channel\n"
@@ -1155,35 +1157,31 @@ def build_help_embed(include_owner: bool = False, language: Optional[str] = None
         inline=False,
     )
     embed.add_field(
-        name="Premium" if not spanish else "Premium",
+        name="Premium Tools" if not spanish else "Herramientas Premium",
         value=(
             "`/dashboard` - Premium analytics dashboard\n"
             "`/growthweek` - Weekly growth analytics\n"
             "`/setalertthreshold` - Set premium growth alert threshold\n"
-            "`/alerts` - Toggle premium growth alerts\n"
+            "`/alerts` - Toggle premium growth alerts"
+        ),
+        inline=False,
+    )
+    embed.add_field(
+        name="Voting / Premium" if not spanish else "Votos / Premium",
+        value=(
+            "`/vote` - Top.gg vote link\n"
+            "`/votestatus` - Check your vote rewards\n"
             "`/premium` - Free vs premium overview\n"
             "`/buypremium` - Get a premium checkout link\n"
             "`/premiumstatus` - View premium billing status"
         ),
         inline=False,
     )
-    embed.add_field(
-        name="Voting" if not spanish else "Votos",
-        value=(
-            "`/vote` - Top.gg vote link\n"
-            "`/votestatus` - Check your vote rewards"
-        ),
-        inline=False,
-    )
-    embed.add_field(
-        name="Compatibility" if not spanish else "Compatibilidad",
-        value=(
-            f"Legacy prefix commands using `{DEFAULT_PREFIX}` remain available for compatibility."
-            if not spanish else
-            f"Los comandos legacy con `{DEFAULT_PREFIX}` siguen disponibles por compatibilidad."
-        ),
-        inline=False,
-    )
+    return embed
+
+
+def build_help_embed(include_owner: bool = False, language: Optional[str] = None) -> discord.Embed:
+    embed = build_public_slash_help_embed(language=language)
 
     if include_owner:
         embed.add_field(
@@ -1483,6 +1481,30 @@ def build_server_status_embed(guild: discord.Guild) -> discord.Embed:
     return embed
 
 
+def validate_milestone_role_embed(guild: discord.Guild, role: discord.Role) -> Optional[discord.Embed]:
+    if role == guild.default_role or role.is_default():
+        return build_main_embed(
+            "Invalid Milestone Role",
+            "@everyone cannot be used as a milestone role because it is not an assignable role. Choose a normal server role below the bot's highest role.",
+            discord.Color.red(),
+        )
+    if role.managed:
+        return build_main_embed(
+            "Invalid Milestone Role",
+            "Managed or integration roles cannot be used as milestone roles because the bot cannot assign them manually.",
+            discord.Color.red(),
+        )
+
+    bot_member = guild.me
+    if bot_member is not None and role >= bot_member.top_role:
+        return build_main_embed(
+            "Invalid Milestone Role",
+            "I can only assign milestone roles below my highest role. Move the bot role above this role, then try again.",
+            discord.Color.red(),
+        )
+    return None
+
+
 def build_set_milestone_embed(guild: discord.Guild, member_count: int, role: discord.Role) -> discord.Embed:
     db.set_milestone_role(guild.id, member_count, role.id)
     return build_main_embed("Milestone Saved", f"At **{member_count}** members, the role {role.mention} will be assigned to the server owner.", discord.Color.green())
@@ -1550,7 +1572,7 @@ def build_best_day_embed(guild: discord.Guild) -> discord.Embed:
     data = db.get_best_growth_day(guild.id)
     if not data:
         return build_main_embed("🏆 Best Growth Day", "No growth data recorded yet.", discord.Color.blurple())
-    embed = build_main_embed("🏆 Best Growth Day", f"**{data['net']:+d} members** on **{data['date']}**", discord.Color.gold())
+    embed = build_main_embed("🏆 Best Growth Day", f"**{data['net']:+d} members** on **{data['date']} UTC**", discord.Color.gold())
     embed.add_field(name="Joins", value=f"+{data['joins']}", inline=True)
     embed.add_field(name="Leaves", value=f"-{data['leaves']}", inline=True)
     return embed
@@ -2458,6 +2480,10 @@ async def setmilestone_command(
             )
         )
 
+    invalid_role_embed = validate_milestone_role_embed(ctx.guild, role)
+    if invalid_role_embed is not None:
+        return await ctx.send(embed=invalid_role_embed)
+
     db.set_milestone_role(ctx.guild.id, member_count, role.id)
     embed = build_main_embed(
         "Milestone Saved",
@@ -2648,25 +2674,7 @@ async def bestday_command(ctx: commands.Context):
     if not await require_guild_context(ctx):
         return
 
-    data = db.get_best_growth_day(ctx.guild.id)
-
-    if not data:
-        return await ctx.send(
-            embed=build_main_embed(
-                "🏆 Best Growth Day",
-                "No growth data recorded yet.",
-                discord.Color.blurple(),
-            )
-        )
-
-    embed = build_main_embed(
-        "🏆 Best Growth Day",
-        f"**{data['net']:+d} members** on **{data['date']}**",
-        discord.Color.gold(),
-    )
-    embed.add_field(name="Joins", value=f"+{data['joins']}", inline=True)
-    embed.add_field(name="Leaves", value=f"-{data['leaves']}", inline=True)
-    await ctx.send(embed=embed)
+    await ctx.send(embed=build_best_day_embed(ctx.guild))
 
 
 @bot.command(name="growthleaderboard")
@@ -2814,7 +2822,7 @@ async def ping_slash(interaction: discord.Interaction):
 @bot.tree.command(name="help", description="Show the bot help menu")
 @app_commands.describe(language="Optional: use 'es' for a Spanish-friendly help menu")
 async def help_slash(interaction: discord.Interaction, language: Optional[str] = None):
-    embed = build_help_embed(include_owner=False, language=language)
+    embed = build_public_slash_help_embed(language=language)
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
@@ -3091,6 +3099,9 @@ async def setmilestone_slash(interaction: discord.Interaction, member_count: int
         return
     if member_count <= 0:
         return await interaction.response.send_message(embed=build_main_embed("Invalid Member Count", "Member count must be greater than 0.", discord.Color.red()), ephemeral=True)
+    invalid_role_embed = validate_milestone_role_embed(interaction.guild, role)
+    if invalid_role_embed is not None:
+        return await interaction.response.send_message(embed=invalid_role_embed, ephemeral=True)
     await interaction.response.send_message(embed=build_set_milestone_embed(interaction.guild, member_count, role), ephemeral=True)
 
 

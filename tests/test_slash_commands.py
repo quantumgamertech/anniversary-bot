@@ -62,8 +62,17 @@ class SlashCommandMigrationTests(unittest.TestCase):
         }
         self.assertTrue(expected.issubset(prefix))
 
-    def test_help_contains_new_public_slash_commands(self):
-        help_src = function_source("build_help_embed")
+    def test_help_slash_uses_public_slash_renderer(self):
+        help_slash_src = function_source("help_slash")
+        self.assertIn("build_public_slash_help_embed", help_slash_src)
+        self.assertNotIn("build_help_embed", help_slash_src)
+        self.assertIn("ephemeral=True", help_slash_src)
+
+    def test_public_slash_help_contains_new_public_commands(self):
+        help_src = function_source("build_public_slash_help_embed")
+        self.assertIn("Slash commands are the primary interface. Legacy ! prefix commands remain available for compatibility.", help_src)
+        for section in ["Start Here", "Growth & Analytics", "Setup & Milestones", "Premium Tools", "Voting / Premium"]:
+            self.assertIn(section, help_src)
         for command in [
             "ping", "help", "start", "setup", "about", "invite", "stats", "serverstatus", "growthtoday",
             "analytics", "bestday", "growthleaderboard", "healthscore", "advisor", "growthpredict", "setreport",
@@ -72,12 +81,19 @@ class SlashCommandMigrationTests(unittest.TestCase):
         ]:
             self.assertIn(f"`/{command}`", help_src)
 
-    def test_public_help_does_not_expose_owner_commands(self):
-        help_src = function_source("build_help_embed")
-        public_src = help_src.split("if include_owner:", 1)[0]
+    def test_public_slash_help_does_not_expose_prefix_or_owner_commands(self):
+        help_src = function_source("build_public_slash_help_embed")
+        self.assertNotIn("DEFAULT_PREFIX", help_src)
         for command in ["servers", "setpremium", "removepremium", "voteadmin", "testvote", "amowner"]:
-            self.assertNotIn(f"`!{command}", public_src)
-            self.assertNotIn(f"`/{command}`", public_src)
+            self.assertNotIn(f"`!{command}", help_src)
+            self.assertNotIn(f"`/{command}`", help_src)
+
+    def test_owner_prefix_help_keeps_owner_commands_separate(self):
+        help_src = function_source("build_help_embed")
+        self.assertIn("build_public_slash_help_embed", help_src)
+        self.assertIn("if include_owner:", help_src)
+        for command in ["servers", "setpremium", "removepremium", "voteadmin", "testvote"]:
+            self.assertIn(f"`{{DEFAULT_PREFIX}}{command}", help_src)
 
     def test_setup_and_config_slash_commands_require_admin(self):
         for function in ["setup_slash", "setreport_slash", "setmilestone_slash", "removemilestone_slash", "setvoterole_slash", "setalertthreshold_slash", "alerts_slash"]:
@@ -96,6 +112,27 @@ class SlashCommandMigrationTests(unittest.TestCase):
         self.assertIn("permissions_for", function_source("setreport_slash"))
         self.assertIn("role: discord.Role", function_source("setmilestone_slash"))
         self.assertIn("role: Optional[discord.Role] = None", function_source("setvoterole_slash"))
+
+    def test_bestday_displays_utc_date_label(self):
+        bestday_src = function_source("build_best_day_embed")
+        self.assertIn("{data['date']} UTC", bestday_src)
+        self.assertIn("build_best_day_embed(ctx.guild)", function_source("bestday_command"))
+        self.assertIn("build_best_day_embed(interaction.guild)", function_source("bestday_slash"))
+
+    def test_invalid_milestone_roles_are_rejected_before_database_write(self):
+        validator_src = function_source("validate_milestone_role_embed")
+        self.assertIn("role.is_default()", validator_src)
+        self.assertIn("@everyone cannot be used as a milestone role", validator_src)
+        self.assertIn("role.managed", validator_src)
+        self.assertIn("bot_member.top_role", validator_src)
+
+        prefix_src = function_source("setmilestone_command")
+        self.assertIn("validate_milestone_role_embed(ctx.guild, role)", prefix_src)
+        self.assertLess(prefix_src.index("validate_milestone_role_embed"), prefix_src.index("db.set_milestone_role"))
+
+        slash_src = function_source("setmilestone_slash")
+        self.assertIn("validate_milestone_role_embed(interaction.guild, role)", slash_src)
+        self.assertLess(slash_src.index("validate_milestone_role_embed"), slash_src.index("build_set_milestone_embed"))
 
     def test_database_write_helpers_preserve_command_behaviors(self):
         expectations = {
